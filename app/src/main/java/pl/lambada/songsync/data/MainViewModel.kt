@@ -1,12 +1,10 @@
 package pl.lambada.songsync.data
 
-import android.content.ContentUris
 import android.content.Context
-import android.net.Uri
-import android.provider.MediaStore
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import pl.lambada.songsync.MainActivity.Companion.mediaStore
 import pl.lambada.songsync.data.remote.github.GithubAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
@@ -25,11 +23,9 @@ import java.net.UnknownHostException
  * ViewModel class for the main functionality of the app.
  */
 class MainViewModel : ViewModel() {
-    private var cachedSongs: List<Song>? = null
     var nextSong: Song? = null // for fullscreen downloader dialog
 
     // Filter settings
-    private var cachedFolders: MutableList<String>? = null
     var blacklistedFolders = mutableListOf<String>()
     var hideLyrics = false
     private var hideFolders = blacklistedFolders.isNotEmpty()
@@ -119,86 +115,6 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * Loads all songs from the MediaStore.
-     * @param context The application context.
-     * @return A list of Song objects representing the songs.
-     */
-    fun getAllSongs(context: Context): List<Song> {
-        return cachedSongs ?: run {
-            val selection = MediaStore.Audio.Media.IS_MUSIC + "!= 0"
-            val projection = arrayOf(
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.DATA,
-                MediaStore.Audio.Media.ALBUM_ID,
-            )
-            val sortOrder = MediaStore.Audio.Media.TITLE + " ASC"
-
-            val songs = mutableListOf<Song>()
-            val cursor = context.contentResolver.query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                projection,
-                selection,
-                null,
-                sortOrder
-            )
-
-            cursor?.use {
-                val titleColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val albumIdColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
-                val pathColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-
-                while (it.moveToNext()) {
-                    val title = it.getString(titleColumn).let { str ->
-                        if (str == "<unknown>") null else str
-                    }
-                    val artist = it.getString(artistColumn).let { str ->
-                        if (str == "<unknown>") null else str
-                    }
-                    val albumId = it.getLong(albumIdColumn)
-                    val filePath = it.getString(pathColumn)
-
-                    @Suppress("SpellCheckingInspection")
-                    val sArtworkUri = Uri.parse("content://media/external/audio/albumart")
-                    val imgUri = ContentUris.withAppendedId(
-                        sArtworkUri,
-                        albumId
-                    )
-
-                    val song = Song(title, artist, imgUri, filePath)
-                    songs.add(song)
-                }
-            }
-            cursor?.close()
-            cachedSongs = songs
-            cachedSongs!!
-        }
-    }
-
-    /**
-     * Loads all songs' folders
-     * @param context The application context.
-     * @return A list of folders.
-     */
-    fun getSongFolders(context: Context): List<String> {
-        return cachedFolders ?: run {
-            val folders = mutableListOf<String>()
-
-            for (song in getAllSongs(context)) {
-                val path = song.filePath
-                val folder = path?.substring(0, path.lastIndexOf("/"))
-                if (folder != null && !folders.contains(folder))
-                    folders.add(folder)
-            }
-
-            cachedFolders = folders
-            cachedFolders!!
-        }
-    }
-
-    /**
      * Filter songs based on user's preferences.
      * @return A list of songs depending on the user's preferences. If no preferences are set, null is returned, so app will use all songs.
      */
@@ -206,7 +122,7 @@ class MainViewModel : ViewModel() {
         hideFolders = blacklistedFolders.isNotEmpty()
         return when {
             hideLyrics && hideFolders -> {
-                cachedSongs!!
+                mediaStore.cachedSongs!!
                     .filter {
                         it.filePath.toLrcFile()?.exists() != true && !blacklistedFolders.contains(
                             it.filePath!!.substring(
@@ -218,13 +134,13 @@ class MainViewModel : ViewModel() {
             }
 
             hideLyrics -> {
-                cachedSongs!!
+                mediaStore.cachedSongs!!
                     .filter { it.filePath.toLrcFile()?.exists() != true }
                     .also { cachedFilteredSongs = it }
             }
 
             hideFolders -> {
-                cachedSongs!!.filter {
+                mediaStore.cachedSongs!!.filter {
                     !blacklistedFolders.contains(
                         it.filePath!!.substring(
                             0,

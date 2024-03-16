@@ -41,7 +41,6 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -62,10 +61,8 @@ import pl.lambada.songsync.ui.components.dialogs.NoInternetDialog
 import pl.lambada.songsync.ui.screens.LoadingScreen
 import pl.lambada.songsync.ui.screens.Providers
 import pl.lambada.songsync.ui.theme.SongSyncTheme
+import pl.lambada.songsync.util.MediaStoreUtil
 import java.io.File
-import java.io.FileNotFoundException
-import java.io.IOException
-import java.net.UnknownHostException
 
 /**
  * The main activity of the SongSync app.
@@ -81,8 +78,8 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         setContent {
-            val context = LocalContext.current
             val scope = rememberCoroutineScope()
             val viewModel: MainViewModel by viewModels()
             val navController = rememberNavController()
@@ -91,11 +88,10 @@ class MainActivity : ComponentActivity() {
             var internetConnection by remember { mutableStateOf(true) }
             var themeDefined by remember { mutableStateOf(false) }
 
-            LaunchedEffect(Unit) {
+            LaunchedEffect(true) { //True for only once, Unit for every recomposition !
                 // Load user-defined settings
-                val sharedPreferences = context.getSharedPreferences(
-                    "pl.lambada.songsync_preferences",
-                    Context.MODE_PRIVATE
+                val sharedPreferences = getSharedPreferences(
+                    "pl.lambada.songsync_preferences", Context.MODE_PRIVATE
                 )
 
                 val pureBlack = sharedPreferences.getBoolean("pure_black", false)
@@ -137,9 +133,6 @@ class MainActivity : ComponentActivity() {
 
                 // Register notification channel
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val notificationManager =
-                        getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
                     val channelId = getString(R.string.batch_download_lyrics)
                     val channelName = getString(R.string.batch_download_lyrics)
                     val channelDescription = getString(R.string.batch_download_lyrics)
@@ -151,30 +144,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (themeDefined)
-                SongSyncTheme(pureBlack = viewModel.pureBlack.value) {
-                    // I'll cry if this crashes due to memory concerns
-                    val selected = rememberSaveable(saver = Saver(
-                        save = { it.toTypedArray() }, restore = { mutableStateListOf(*it) }
-                    )) { mutableStateListOf<String>() }
-                    var allSongs by remember { mutableStateOf<List<Song>?>(null) }
-                    val navBackStackEntry by navController.currentBackStackEntryAsState()
-                    val currentRoute = navBackStackEntry?.destination?.route
+            if (themeDefined) SongSyncTheme(pureBlack = viewModel.pureBlack.value) {
+                // I'll cry if this crashes due to memory concerns
+                val selected = rememberSaveable(saver = Saver(save = { it.toTypedArray() },
+                    restore = { mutableStateListOf(*it) })) { mutableStateListOf<String>() }
+                var allSongs by remember { mutableStateOf<List<Song>?>(null) }
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
 
-                    // Check for permissions and get all songs
-                    RequestPermissions(
-                        onGranted = { hasPermissions = true },
-                        context = context,
-                        onDone = {
-                            if (hasPermissions) {
-                                // Get all songs
-                                scope.launch(Dispatchers.IO) {
-                                    allSongs = viewModel.getAllSongs(context)
-                                }
+                // Check for permissions and get all songs
+                RequestPermissions(onGranted = { hasPermissions = true },
+                    context = this,
+                    onDone = {
+                        if (hasPermissions) {
+                            // Get all songs
+                            scope.launch(Dispatchers.IO) {
+                                allSongs = mediaStore.getAllSongs(this@MainActivity)
                             }
-                            hasLoadedPermissions = true
                         }
-                    )
+                        hasLoadedPermissions = true
+                    })
 
                     Scaffold(
                         topBar = {
@@ -255,10 +244,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onResume() {
-        val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(2) // "Done" notification
         super.onResume()
+    }
+
+    companion object {
+        lateinit var notificationManager: NotificationManager
+        val mediaStore by lazy { MediaStoreUtil }
     }
 }
 
@@ -275,21 +267,15 @@ fun RequestPermissions(onGranted: () -> Unit, context: Context, onDone: () -> Un
                 onDone()
             }
     }
-    val storagePermissionState = rememberMultiplePermissionsState(
-        listOf(
-            android.Manifest.permission.READ_EXTERNAL_STORAGE,
-            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
-        ),
-        onPermissionsResult = {
-            if (
-                it[android.Manifest.permission.READ_EXTERNAL_STORAGE]!! &&
-                it[android.Manifest.permission.WRITE_EXTERNAL_STORAGE]!!
-            ) {
-                onGranted()
-            }
-            onDone()
+    val storagePermissionState = rememberMultiplePermissionsState(listOf(
+        android.Manifest.permission.READ_EXTERNAL_STORAGE,
+        android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+    ), onPermissionsResult = {
+        if (it[android.Manifest.permission.READ_EXTERNAL_STORAGE]!! && it[android.Manifest.permission.WRITE_EXTERNAL_STORAGE]!!) {
+            onGranted()
         }
-    )
+        onDone()
+    })
     var notificationPermission: PermissionState? = null
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         notificationPermission = rememberPermissionState(
@@ -298,8 +284,7 @@ fun RequestPermissions(onGranted: () -> Unit, context: Context, onDone: () -> Un
     }
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (!notificationPermission!!.status.isGranted)
-                notificationPermission.launchPermissionRequest()
+            if (!notificationPermission!!.status.isGranted) notificationPermission.launchPermissionRequest()
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
@@ -307,8 +292,7 @@ fun RequestPermissions(onGranted: () -> Unit, context: Context, onDone: () -> Un
                 intent.addCategory("android.intent.category.DEFAULT")
                 intent.data = android.net.Uri.parse(
                     String.format(
-                        "package:%s",
-                        context.applicationContext.packageName
+                        "package:%s", context.applicationContext.packageName
                     )
                 )
                 storageManager!!.launch(intent)

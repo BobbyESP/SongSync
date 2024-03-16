@@ -106,6 +106,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.parcelize.Parcelize
 import pl.lambada.songsync.MainActivity
+import pl.lambada.songsync.MainActivity.Companion.mediaStore
 import pl.lambada.songsync.R
 import pl.lambada.songsync.data.EmptyQueryException
 import pl.lambada.songsync.data.MainViewModel
@@ -379,7 +380,7 @@ fun FiltersDialog(
     viewModel: MainViewModel, context: Context, onDismiss: () -> Unit, onFilterChange: () -> Unit
 ) {
     var hideLyrics by remember { mutableStateOf(viewModel.hideLyrics) }
-    val folders = viewModel.getSongFolders(context)
+    val folders = mediaStore.getSongFolders(context)
     var showFolders by rememberSaveable { mutableStateOf(false) }
 
     val sharedPreferences = LocalContext.current.getSharedPreferences(
