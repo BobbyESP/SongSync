@@ -20,14 +20,13 @@ import pl.lambada.songsync.ui.screens.HomeScreen
  */
 @Composable
 fun Navigator(
-    navController: NavHostController, selected: SnapshotStateList<String>,
-    allSongs: List<Song>?, viewModel: MainViewModel
+    navController: NavHostController, selected: SnapshotStateList<String>, viewModel: MainViewModel
 ) {
     NavHost(navController = navController, startDestination = Screens.Home.name) {
         composable(Screens.Home.name) {
             HomeScreen(
                 navController = navController, selected = selected,
-                allSongs = allSongs, viewModel = viewModel
+                viewModel = viewModel
             )
         }
         composable(Screens.Browse.name) {

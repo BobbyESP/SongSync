@@ -1,9 +1,19 @@
 package pl.lambada.songsync.data
 
 import android.content.Context
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import pl.lambada.songsync.MainActivity
 import pl.lambada.songsync.MainActivity.Companion.mediaStore
 import pl.lambada.songsync.data.remote.github.GithubAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
@@ -23,6 +33,13 @@ import java.net.UnknownHostException
  * ViewModel class for the main functionality of the app.
  */
 class MainViewModel : ViewModel() {
+
+    private val mutableViewStateFlow = MutableStateFlow(DownloaderViewState())
+    val viewStateFlow = mutableViewStateFlow.asStateFlow()
+    data class DownloaderViewState(
+        var songsList: List<Song>? = null,
+    )
+
     var nextSong: Song? = null // for fullscreen downloader dialog
 
     // Filter settings
@@ -48,11 +65,22 @@ class MainViewModel : ViewModel() {
     var neteaseID = 0
     // TODO: Use values from SongInfo object returned by search instead of storing them here
 
+    var downloadJob: Job? = null
+
     /**
      * Refreshes the access token by sending a request to the Spotify API.
      */
     suspend fun refreshToken() {
         spotifyAPI.refreshToken()
+    }
+
+    fun loadSongs(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val songs = mediaStore.getAllSongs(context = context)
+            mutableViewStateFlow.update {
+                it.copy(songsList = songs)
+            }
+        }
     }
 
     /**
@@ -93,6 +121,12 @@ class MainViewModel : ViewModel() {
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    suspend fun downloadBatchSongs(callback: (BatchDownloadInfo, BatchDownloadProgress) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+
         }
     }
 
@@ -158,6 +192,18 @@ class MainViewModel : ViewModel() {
         }
     }
 }
+
+data class BatchDownloadInfo(
+    val songName: String,
+    val totalSongs: Int,
+    val alreadyDownloadedSongs: Int,
+)
+
+data class BatchDownloadProgress(
+    val successful: Int,
+    val failed: Int,
+    val noLyrics: Int,
+)
 
 class NoTrackFoundException : Exception()
 

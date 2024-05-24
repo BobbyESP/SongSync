@@ -80,6 +80,7 @@ dependencies {
     implementation(libs.ui)
     implementation(libs.material3)
     implementation(libs.androidx.navigation.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     debugImplementation(libs.ui.tooling)
     debugImplementation(libs.ui.tooling.preview)
     implementation(libs.accompanist.systemuicontroller)

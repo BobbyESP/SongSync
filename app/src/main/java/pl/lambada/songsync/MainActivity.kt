@@ -171,7 +171,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 selected = selected,
                                 currentRoute = currentRoute,
-                                allSongs = allSongs
                             )
                         },
                         bottomBar = {
@@ -234,7 +233,7 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 Navigator(
                                     navController = navController, selected = selected,
-                                    allSongs = allSongs, viewModel = viewModel
+                                    viewModel = viewModel
                                 )
                             }
                         }

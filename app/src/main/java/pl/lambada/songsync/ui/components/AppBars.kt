@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import pl.lambada.songsync.R
@@ -42,7 +44,6 @@ fun TopBar(
     viewModel: MainViewModel,
     currentRoute: String?,
     selected: SnapshotStateList<String>,
-    allSongs: List<Song>?
 ) {
     val screens = Screens.values()
     val currentScreen = screens.firstOrNull { it.name == currentRoute }
@@ -53,7 +54,9 @@ fun TopBar(
     }
     var ableToSelect by remember { mutableStateOf<List<Song>?>(null) }
 
-    ableToSelect = viewModel.cachedFilteredSongs ?: allSongs
+    val viewState = viewModel.viewStateFlow.collectAsStateWithLifecycle().value
+
+    ableToSelect = viewModel.cachedFilteredSongs ?: viewState.songsList
 
     BackPressHandler(enabled = selected.size > 0, onBackPressed = { selected.clear() })
     Crossfade(

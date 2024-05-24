@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Parcelable
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -97,6 +98,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat.getString
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import coil.imageLoader
@@ -127,20 +129,21 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun HomeScreen(
-    selected: SnapshotStateList<String>,
-    allSongs: List<Song>?,
-    navController: NavHostController,
-    viewModel: MainViewModel
+    selected: SnapshotStateList<String>, navController: NavHostController, viewModel: MainViewModel
 ) {
-    if (allSongs == null) {
-        LoadingScreen()
-    } else {
-        HomeScreenLoaded(
-            navController = navController,
-            viewModel = viewModel,
-            songs = allSongs,
-            selected = selected
-        )
+    val viewState = viewModel.viewStateFlow.collectAsStateWithLifecycle().value
+    Crossfade(
+        targetState = viewState.songsList,
+        label = "Home screen crossfade by songs list"
+    ) { songsList ->
+        when (songsList) {
+            null -> LoadingScreen()
+            else -> HomeScreenLoaded(
+                selected = selected,
+                navController = navController,
+                viewModel = viewModel
+            )
+        }
     }
 }
 
@@ -169,26 +172,24 @@ fun HomeScreenLoaded(
     selected: SnapshotStateList<String>,
     navController: NavHostController,
     viewModel: MainViewModel,
-    songs: List<Song>
 ) {
+    val viewState = viewModel.viewStateFlow.collectAsStateWithLifecycle().value
+
     var showingSearch by rememberSaveable { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(showingSearch) }
     var query by rememberSaveable(
         stateSaver = Saver(save = {
             MyTextFieldValue(
-                it.text,
-                it.selection.start,
-                it.selection.end
+                it.text, it.selection.start, it.selection.end
             )
-        },
-            restore = { TextFieldValue(it.text, TextRange(it.cursorStart, it.cursorEnd)) })
+        }, restore = { TextFieldValue(it.text, TextRange(it.cursorStart, it.cursorEnd)) })
     ) { mutableStateOf(TextFieldValue()) }
     var isBatchDownload by rememberSaveable { mutableStateOf(false) }
     var showFilters by rememberSaveable { mutableStateOf(false) }
     var filtered by remember { mutableStateOf<List<Song>?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val displaySongs = filtered ?: songs
+    val displaySongs = filtered ?: viewState.songsList!!
 
     LaunchedEffect(Unit) {
         filtered = viewModel.filterSongs()
@@ -197,7 +198,7 @@ fun HomeScreenLoaded(
     Column {
         if (isBatchDownload) {
             BatchDownloadLyrics(songs = if (selected.isEmpty()) displaySongs
-            else songs.filter { selected.contains(it.filePath) }.toList(),
+            else displaySongs.filter { selected.contains(it.filePath) },
                 viewModel = viewModel,
                 onDone = { isBatchDownload = false })
         }
@@ -336,7 +337,7 @@ fun HomeScreenLoaded(
                 HorizontalDivider()
             }
 
-            items(displaySongs.size) { i ->
+            items(count = displaySongs.size, key = { index -> "song$index" }) { i ->
                 val song = displaySongs[i]
                 val songTitleLowercase = song.title?.lowercaseWithLocale()
                 val songArtistLowercase = song.artist?.lowercaseWithLocale()
@@ -360,10 +361,11 @@ fun HomeScreenLoaded(
                                     true // show again but don't focus
                             }
                         },
-                        navController = navController,
-                        song = song,
-                        viewModel = viewModel
-                    )
+                        song = song
+                    ) {
+                        viewModel.nextSong = song
+                        navController.navigate(Screens.Browse.name)
+                    }
                 }
             }
 
@@ -484,8 +486,7 @@ fun FiltersDialog(
                                         viewModel.blacklistedFolders.remove(folder)
                                     }
                                     sharedPreferences.edit().putString(
-                                        "blacklist",
-                                        viewModel.blacklistedFolders.joinToString(",")
+                                        "blacklist", viewModel.blacklistedFolders.joinToString(",")
                                     ).apply()
                                     onFilterChange()
                                 })
@@ -514,9 +515,8 @@ private fun SongItem(
     selected: Boolean,
     quickSelect: Boolean,
     onSelectionChanged: (Boolean) -> Unit,
-    navController: NavHostController,
     song: Song,
-    viewModel: MainViewModel
+    onClick: () -> Unit = {},
 ) {
     OutlinedCard(
         shape = RoundedCornerShape(10.dp),
@@ -527,8 +527,7 @@ private fun SongItem(
                 if (quickSelect) {
                     onSelectionChanged(!selected)
                 } else {
-                    viewModel.nextSong = song
-                    navController.navigate(Screens.Browse.name)
+                    onClick()
                 }
             }, onLongClick = {
                 onSelectionChanged(!selected)
@@ -758,7 +757,8 @@ fun BatchDownloadLyrics(songs: List<Song>, viewModel: MainViewModel, onDone: () 
                         if (queryResult != null) {
                             val lyricsResult: String
                             try {
-                                lyricsResult = viewModel.getSyncedLyrics(queryResult.songLink ?: "")!!
+                                lyricsResult =
+                                    viewModel.getSyncedLyrics(queryResult.songLink ?: "")!!
                             } catch (e: Exception) {
                                 when (e) {
                                     is NullPointerException, is FileNotFoundException -> {
@@ -803,7 +803,8 @@ fun BatchDownloadLyrics(songs: List<Song>, viewModel: MainViewModel, onDone: () 
                                     sdCardFiles?.createFile(
                                         "text/lrc", file.name
                                     )?.let {
-                                        val outputStream = context.contentResolver.openOutputStream(it.uri)
+                                        val outputStream =
+                                            context.contentResolver.openOutputStream(it.uri)
                                         outputStream?.write(lrc.toByteArray())
                                         outputStream?.close()
                                     }
