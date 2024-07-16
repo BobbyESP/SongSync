@@ -31,8 +31,9 @@ import pl.lambada.songsync.R
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun SongCard(
+fun SharedTransitionScope.SongCard(
     id: String,
+    animateText: Boolean,
     songName: String,
     artists: String,
     coverUrl: String?,
@@ -43,9 +44,7 @@ fun SongCard(
     OutlinedCard(
         shape = RoundedCornerShape(10.dp),
         modifier = CombinedModifier(
-            outer = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
+            outer = Modifier.fillMaxWidth(),
             inner = modifier
         )
     ) {
@@ -59,26 +58,14 @@ fun SongCard(
                         }.build(),
                     imageLoader = LocalContext.current.imageLoader
                 )
-                with(sharedTransitionScope) {
-                    Image(
-                        painter = painter,
-                        contentDescription = stringResource(R.string.album_cover),
-                        modifier = Modifier
-                            .sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "cover$id"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                clipInOverlayDuringTransition = sharedTransitionScope.OverlayClip(
-                                    RoundedCornerShape(
-                                        topStart = 30f,
-                                        bottomStart = 30f,
-                                        topEnd = 0f,
-                                        bottomEnd = 0f
-                                    )
-                                )
-                            )
-                            .height(72.dp)
-                            .aspectRatio(1f)
-                            .clip(
+                Image(
+                    painter = painter,
+                    contentDescription = stringResource(R.string.album_cover),
+                    modifier = Modifier
+                        .sharedBounds(
+                            sharedContentState = rememberSharedContentState(key = "cover$id"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            clipInOverlayDuringTransition = sharedTransitionScope.OverlayClip(
                                 RoundedCornerShape(
                                     topStart = 30f,
                                     bottomStart = 30f,
@@ -86,32 +73,44 @@ fun SongCard(
                                     bottomEnd = 0f
                                 )
                             )
+                        )
+                        .height(72.dp)
+                        .aspectRatio(1f)
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = 30f,
+                                bottomStart = 30f,
+                                topEnd = 0f,
+                                bottomEnd = 0f
+                            )
+                        )
+                )
+            }
+            Spacer(modifier = Modifier.width(2.dp))
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.Top
+            ) {
+                AnimatedText(
+                    text = songName,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    animate = animateText,
+                    modifier = Modifier.sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "title$id"),
+                        animatedVisibilityScope = animatedVisibilityScope
                     )
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.Top
-                    ) {
-                        MarqueeText(
-                            text = songName,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "title$id"),
-                                animatedVisibilityScope = animatedVisibilityScope
-                            )
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        MarqueeText(
-                            text = artists,
-                            fontSize = 14.sp,
-                            modifier = Modifier.sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "artist$id"),
-                                animatedVisibilityScope = animatedVisibilityScope
-                            )
-                        )
-                    }
-                }
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                AnimatedText(
+                    text = artists,
+                    fontSize = 14.sp,
+                    animate = animateText,
+                    modifier = Modifier.sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "artist$id"),
+                        animatedVisibilityScope = animatedVisibilityScope
+                    )
+                )
             }
         }
     }

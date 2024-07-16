@@ -5,11 +5,6 @@ plugins {
     alias(libs.plugins.parcelize)
 }
 
-val releaseStoreFile = project.properties["RELEASE_STORE_FILE"] as String?
-val releaseStorePassword = project.properties["RELEASE_STORE_PASSWORD"] as String?
-val releaseKeyAlias = project.properties["RELEASE_KEY_ALIAS"] as String?
-val releaseKeyPassword = project.properties["RELEASE_KEY_PASSWORD"] as String?
-
 android {
     namespace = "pl.lambada.songsync"
     compileSdk = 34
@@ -19,11 +14,11 @@ android {
         minSdk = 21
         //noinspection OldTargetApi
         targetSdk = 34
-        versionCode = 301
-        versionName = "3.0.1"
+        versionCode = 400
+        versionName = "4.0.0"
 
         resourceConfigurations += arrayOf(
-            "ar", "de", "en", "es", "in", "ja", "pt", "pt-rBR", "ro", "vi", "zh-rCN"
+            "ar", "de", "en", "es", "in", "ja", "pt", "pt-rBR", "ro", "vi", "zh-rCN", "tr"
         )
 
         vectorDrawables {
@@ -32,11 +27,11 @@ android {
     }
     signingConfigs {
         create("release") {
-            if (project.hasProperty("RELEASE_KEY_ALIAS")) {
-                storeFile = file(releaseStoreFile!!)
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
+            if (System.getenv("RELEASE_STORE_FILE") != null) {
+                storeFile = file(System.getenv("RELEASE_STORE_FILE"))
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
             }
         }
     }
@@ -47,7 +42,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            if (project.hasProperty("RELEASE_KEY_ALIAS")) {
+            if (System.getenv("RELEASE_STORE_FILE") != null) {
                 signingConfig = signingConfigs["release"]
             }
         }
@@ -63,7 +58,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.3"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
         resources {
@@ -80,11 +75,10 @@ dependencies {
     implementation(libs.ui)
     implementation(libs.material3)
     implementation(libs.androidx.navigation.runtime.ktx)
-    debugImplementation(libs.ui.tooling)
-    debugImplementation(libs.ui.tooling.preview)
     implementation(libs.accompanist.systemuicontroller)
     implementation(libs.accompanist.permissions)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.compose.animation)
     implementation(libs.coil.compose)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.kotlinx.serialization.json)
@@ -92,12 +86,7 @@ dependencies {
     implementation(libs.androidx.preference)
     implementation(libs.ktor.core)
     implementation(libs.ktor.cio)
-
-    implementation(libs.ui.graphics)
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.datastore.preferences)
-    implementation(libs.androidx.compose.animation)
+    implementation(libs.datastore.preferences)
+    debugImplementation(libs.ui.tooling)
+    debugImplementation(libs.ui.tooling.preview)
 }

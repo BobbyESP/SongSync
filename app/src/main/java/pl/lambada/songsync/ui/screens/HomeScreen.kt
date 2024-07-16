@@ -54,10 +54,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ArrowRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Deselect
-import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
@@ -68,6 +69,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,14 +79,15 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -114,6 +117,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat.getString
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.documentfile.provider.DocumentFile
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
@@ -126,16 +133,21 @@ import kotlinx.parcelize.Parcelize
 import pl.lambada.songsync.MainActivity
 import pl.lambada.songsync.R
 import pl.lambada.songsync.data.EmptyQueryException
+import pl.lambada.songsync.data.InternalErrorException
 import pl.lambada.songsync.data.MainViewModel
 import pl.lambada.songsync.data.NoTrackFoundException
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.ui.ScreenAbout
 import pl.lambada.songsync.ui.ScreenSearch
-import pl.lambada.songsync.ui.components.MarqueeText
 import pl.lambada.songsync.util.ext.BackPressHandler
+import pl.lambada.songsync.ui.components.AnimatedText
+import pl.lambada.songsync.ui.components.SwitchItem
+import pl.lambada.songsync.util.dataStore
+import pl.lambada.songsync.util.ext.getVersion
 import pl.lambada.songsync.util.ext.lowercaseWithLocale
 import pl.lambada.songsync.util.ext.toLrcFile
+import pl.lambada.songsync.util.set
 import java.io.FileNotFoundException
 import kotlin.math.roundToInt
 
@@ -166,7 +178,14 @@ fun HomeScreen(
             }
             var ableToSelect by remember { mutableStateOf<List<Song>?>(null) }
 
-            ableToSelect = viewModel.cachedFilteredSongs ?: allSongs
+            val searched = viewModel.searchResults.collectAsState()
+            val filtered = viewModel.cachedFilteredSongs.collectAsState()
+
+            ableToSelect = when {
+                searched.value.isNotEmpty() -> searched.value
+                filtered.value.isNotEmpty() -> filtered.value
+                else -> allSongs
+            }
 
             BackPressHandler(enabled = selected.size > 0, onBackPressed = { selected.clear() })
             Crossfade(
@@ -191,13 +210,13 @@ fun HomeScreen(
                                 label = ""
                             ) { size ->
                                 Text(
-                                    modifier = Modifier.padding(start = 8.dp),
+                                    modifier = Modifier.padding(start = 6.dp),
                                     text = stringResource(id = R.string.selected_count, size)
                                 )
                             }
                         } else {
                             Text(
-                                modifier = Modifier.padding(start = 8.dp),
+                                modifier = Modifier.padding(start = 6.dp),
                                 text = stringResource(R.string.app_name)
                             )
                         }
@@ -322,45 +341,49 @@ fun HomeScreen(
                                 )
                             }
                             val selectedProvider = rememberSaveable { mutableStateOf(viewModel.provider) }
-                            val providers = Providers.values()
+                            val providers = Providers.entries.toTypedArray()
                             val context = LocalContext.current
-                            val sharedPreferences = context.getSharedPreferences(
-                                "pl.lambada.songsync_preferences",
-                                Context.MODE_PRIVATE
-                            )
+                            val dataStore = context.dataStore
                             DropdownMenu(
                                 expanded = expandedProviders,
                                 onDismissRequest = { expandedProviders = false }
                             ) {
                                 Text(
                                     text = stringResource(id = R.string.provider),
-                                    modifier = Modifier.padding(start = 26.dp, top = 8.dp),
+                                    modifier = Modifier.padding(start = 18.dp, top = 8.dp),
                                     fontSize = 12.sp
                                 )
                                 providers.forEach {
                                     DropdownMenuItem(
                                         text = {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = it.displayName,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .padding(start = 6.dp)
+                                                )
                                                 RadioButton(
                                                     selected = selectedProvider.value == it,
                                                     onClick = {
                                                         selectedProvider.value = it
                                                         viewModel.provider = it
-                                                        sharedPreferences.edit()
-                                                            .putString("provider", it.displayName)
-                                                            .apply()
+                                                        dataStore.set(
+                                                            stringPreferencesKey("provider"),
+                                                            it.displayName
+                                                        )
                                                         expandedProviders = false
                                                     }
                                                 )
-                                                Text(text = it.displayName, modifier = Modifier.padding(end = 16.dp))
                                             }
                                         },
                                         onClick = {
                                             selectedProvider.value = it
                                             viewModel.provider = it
-                                            sharedPreferences.edit()
-                                                .putString("provider", it.displayName)
-                                                .apply()
+                                            dataStore.set(
+                                                stringPreferencesKey("provider"),
+                                                it.displayName
+                                            )
                                             expandedProviders = false
                                         }
                                     )
@@ -458,13 +481,18 @@ fun HomeScreenLoaded(
             restore = { TextFieldValue(it.text, TextRange(it.cursorStart, it.cursorEnd)) })
     ) { mutableStateOf(TextFieldValue()) }
     var showFilters by rememberSaveable { mutableStateOf(false) }
-    var filtered by remember { mutableStateOf<List<Song>?>(null) }
+    val filtered = viewModel.cachedFilteredSongs.collectAsState()
+    val searched = viewModel.searchResults.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val displaySongs = filtered ?: songs
+    val displaySongs = when {
+        query.text.isNotEmpty() -> searched.value
+        filtered.value.isNotEmpty() -> filtered.value
+        else -> songs
+    }
 
     LaunchedEffect(Unit) {
-        filtered = viewModel.filterSongs()
+        viewModel.filterSongs()
     }
 
     Column {
@@ -529,7 +557,10 @@ fun HomeScreenLoaded(
                             }
                             val focusManager = LocalFocusManager.current
                             TextField(value = query,
-                                onValueChange = { query = it },
+                                onValueChange = {
+                                    query = it
+                                    viewModel.updateSearchResults(it.text.lowercaseWithLocale())
+                                },
                                 leadingIcon = {
                                     Icon(Icons.Filled.Search,
                                         contentDescription = stringResource(id = R.string.search),
@@ -539,13 +570,16 @@ fun HomeScreenLoaded(
                                         })
                                 },
                                 trailingIcon = {
-                                    Icon(Icons.Default.Clear,
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
                                         contentDescription = stringResource(id = R.string.clear),
                                         modifier = Modifier.clickable {
                                             query = TextFieldValue("")
+                                            viewModel.updateSearchResults("")
                                             showSearch = false
                                             showingSearch = false
-                                        })
+                                        }
+                                    )
                                 },
                                 placeholder = { Text(stringResource(id = R.string.search)) },
                                 shape = ShapeDefaults.ExtraLarge,
@@ -581,11 +615,9 @@ fun HomeScreenLoaded(
                             ) {
                                 Text(text = "${displaySongs.size} songs")
                                 Spacer(modifier = Modifier.weight(1f))
-                                IconButton(onClick = {
-                                    showFilters = true
-                                }) {
+                                IconButton(onClick = { showFilters = true }) {
                                     Icon(
-                                        imageVector = Icons.Default.FilterAlt,
+                                        imageVector = Icons.Outlined.FilterAlt,
                                         contentDescription = stringResource(R.string.search),
                                     )
                                 }
@@ -597,7 +629,7 @@ fun HomeScreenLoaded(
                                         onDismiss = { showFilters = false },
                                         onFilterChange = {
                                             scope.launch(Dispatchers.Default) {
-                                                filtered = viewModel.filterSongs()
+                                                viewModel.filterSongs()
                                             }
                                         },
                                     )
@@ -617,35 +649,28 @@ fun HomeScreenLoaded(
 
             items(displaySongs.size) { i ->
                 val song = displaySongs[i]
-                val songTitleLowercase = song.title?.lowercaseWithLocale()
-                val songArtistLowercase = song.artist?.lowercaseWithLocale()
-                val queryLowercase = query.text.lowercaseWithLocale()
 
-                if (songTitleLowercase?.contains(queryLowercase) == true || songArtistLowercase?.contains(
-                        queryLowercase
-                    ) == true
-                ) {
-                    SongItem(
-                        id = i.toString(),
-                        selected = selected.contains(song.filePath),
-                        quickSelect = selected.size > 0,
-                        onSelectionChanged = { newValue ->
-                            if (newValue) {
-                                song.filePath?.let { selected.add(it) }
-                                showSearch = false
-                                showingSearch = false
-                            } else {
-                                selected.remove(song.filePath)
-                                if (selected.size == 0 && query.text.isNotEmpty()) showingSearch =
-                                    true // show again but don't focus
-                            }
-                        },
-                        navController = navController,
-                        song = song,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                    )
-                }
+                SongItem(
+                    id = i.toString(),
+                    selected = selected.contains(song.filePath),
+                    quickSelect = selected.size > 0,
+                    onSelectionChanged = { newValue ->
+                        if (newValue) {
+                            song.filePath?.let { selected.add(it) }
+                            showSearch = false
+                            showingSearch = false
+                        } else {
+                            selected.remove(song.filePath)
+                            if (selected.size == 0 && query.text.isNotEmpty()) showingSearch =
+                                true // show again but don't focus
+                        }
+                    },
+                    navController = navController,
+                    song = song,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    viewModel = viewModel,
+                )
             }
 
             item { Spacer(modifier = Modifier.height(4.dp)) }
@@ -665,9 +690,7 @@ fun FiltersDialog(
     val folders = viewModel.getSongFolders(context)
     var showFolders by rememberSaveable { mutableStateOf(false) }
 
-    val sharedPreferences = LocalContext.current.getSharedPreferences(
-        "pl.lambada.songsync_preferences", Context.MODE_PRIVATE
-    )
+    val dataStore = context.dataStore
 
     BasicAlertDialog(onDismissRequest = { onDismiss() }) {
         Surface(
@@ -677,46 +700,58 @@ fun FiltersDialog(
             shape = MaterialTheme.shapes.large,
             tonalElevation = AlertDialogDefaults.TonalElevation
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
                 Text(
                     text = stringResource(R.string.filters),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(top = 24.dp, start = 24.dp, bottom = 16.dp)
                 )
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                SwitchItem(
+                    label = stringResource(R.string.no_lyrics_only),
+                    selected = hideLyrics,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(20f)),
+                    innerPaddingValues = PaddingValues(
+                        top = 8.dp,
+                        start = 8.dp,
+                        end = 10.dp,
+                        bottom = 8.dp
+                    )
                 ) {
-                    Row(modifier = Modifier.weight(0.8f)) {
-                        Text(stringResource(R.string.no_lyrics_only))
-                    }
-                    Switch(checked = hideLyrics, onCheckedChange = {
-                        hideLyrics = it
-                        viewModel.hideLyrics = it
-                        sharedPreferences.edit().putBoolean("hide_lyrics", it).apply()
-                        onFilterChange()
-                    })
+                    viewModel.hideLyrics = !hideLyrics
+                    dataStore.set(
+                        booleanPreferencesKey("hide_lyrics"),
+                        !hideLyrics
+                    )
+                    hideLyrics = !hideLyrics
+                    onFilterChange()
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
+                    modifier = Modifier
+                        .padding(start = 24.dp, end = 26.dp)
+                        .clip(RoundedCornerShape(100))
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .clickable { showFolders = true }
+                        .padding(start = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(modifier = Modifier.weight(0.8f)) {
+                    Row(modifier = Modifier.weight(1f)) {
                         Text(stringResource(R.string.ignore_folders))
                     }
-                    IconButton(onClick = {
-                        showFolders = true
-                    }) {
+                    IconButton(onClick = { showFolders = true }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                Row {
+                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Spacer(modifier = Modifier.weight(1f))
-                    Button(onClick = { onDismiss() }) {
+                    TextButton(
+                        onClick = { onDismiss() }
+                    ) {
                         Text(stringResource(R.string.close))
                     }
                 }
@@ -733,52 +768,69 @@ fun FiltersDialog(
                 shape = MaterialTheme.shapes.large,
                 tonalElevation = AlertDialogDefaults.TonalElevation
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column {
                     Text(
                         text = stringResource(R.string.ignore_folders),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(start = 22.dp, top = 22.dp, bottom = 16.dp)
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider()
                     LazyColumn {
                         items(folders.size) {
                             val folder = folders[it]
                             var checked by remember {
-                                mutableStateOf(
-                                    viewModel.blacklistedFolders.contains(
-                                        folder
-                                    )
-                                )
+                                mutableStateOf(viewModel.blacklistedFolders.contains(folder))
                             }
 
                             Row(
+                                modifier = Modifier
+                                    .clickable {
+                                        checked = !checked
+                                        if (checked) {
+                                            viewModel.blacklistedFolders.add(folder)
+                                        } else {
+                                            viewModel.blacklistedFolders.remove(folder)
+                                        }
+                                        dataStore.set(
+                                            stringPreferencesKey("blacklist"),
+                                            viewModel.blacklistedFolders.joinToString(",")
+                                        )
+                                        onFilterChange()
+                                    }
+                                    .padding(start = 22.dp, end = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Row(modifier = Modifier.weight(0.8f)) {
-                                    Text(folder)
-                                }
-                                Checkbox(checked = checked, onCheckedChange = { check ->
-                                    if (check) {
-                                        checked = true
-                                        viewModel.blacklistedFolders.add(folder)
-                                    } else {
-                                        checked = false
-                                        viewModel.blacklistedFolders.remove(folder)
+                                Icon(imageVector = Icons.Outlined.Folder, contentDescription = "Folder icon")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = folder.removePrefix("/storage/emulated/0/"),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(vertical = 16.dp)
+                                )
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = { check ->
+                                        checked = check
+                                        if (check) {
+                                            viewModel.blacklistedFolders.add(folder)
+                                        } else {
+                                            viewModel.blacklistedFolders.remove(folder)
+                                        }
+                                        dataStore.set(
+                                            stringPreferencesKey("blacklist"),
+                                            viewModel.blacklistedFolders.joinToString(",")
+                                        )
+                                        onFilterChange()
                                     }
-                                    sharedPreferences.edit().putString(
-                                        "blacklist",
-                                        viewModel.blacklistedFolders.joinToString(",")
-                                    ).apply()
-                                    onFilterChange()
-                                })
+                                )
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
                         }
                         item {
-                            Row {
+                            HorizontalDivider()
+                            Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                                 Spacer(modifier = Modifier.weight(1f))
-
-                                Button(onClick = { showFolders = false }) {
+                                TextButton(onClick = { showFolders = false }) {
                                     Text(stringResource(R.string.close))
                                 }
                             }
@@ -801,6 +853,7 @@ private fun SongItem(
     song: Song,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    viewModel: MainViewModel,
 ) {
     val painter = rememberAsyncImagePainter(
         ImageRequest.Builder(LocalContext.current).data(data = song.imgUri).apply {
@@ -858,7 +911,8 @@ private fun SongItem(
                 modifier = Modifier.fillMaxHeight(),
                 verticalArrangement = Arrangement.SpaceAround
             ) {
-                MarqueeText(
+                AnimatedText(
+                    animate = !viewModel.disableMarquee.value,
                     text = songName,
                     fontSize = 16.sp,
                     color = MaterialTheme.colorScheme.contentColorFor(bgColor),
@@ -867,7 +921,8 @@ private fun SongItem(
                         animatedVisibilityScope = animatedVisibilityScope
                     )
                 )
-                MarqueeText(
+                AnimatedText(
+                    animate = !viewModel.disableMarquee.value,
                     text = artists,
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.contentColorFor(bgColor),
@@ -1010,8 +1065,9 @@ fun BatchDownloadLyrics(songs: List<Song>, viewModel: MainViewModel, onDone: () 
                 text = {
                     Column {
                         Text(text = stringResource(R.string.downloading_lyrics))
-                        MarqueeText(
-                            stringResource(
+                        AnimatedText(
+                            animate = !viewModel.disableMarquee.value,
+                            text = stringResource(
                                 R.string.song,
                                 songs.getOrNull((count) % total.coerceAtLeast(1))?.title
                                     ?: unknownString,
@@ -1077,7 +1133,7 @@ fun BatchDownloadLyrics(songs: List<Song>, viewModel: MainViewModel, onDone: () 
                                     continue
                                 }
 
-                                is NoTrackFoundException, is EmptyQueryException -> {
+                                is NoTrackFoundException, is EmptyQueryException, is InternalErrorException -> {
                                     // not increasing notFoundInARow because that is for rate limit
                                     failedCount++
                                 }
@@ -1089,7 +1145,7 @@ fun BatchDownloadLyrics(songs: List<Song>, viewModel: MainViewModel, onDone: () 
                         if (queryResult != null) {
                             val lyricsResult: String
                             try {
-                                lyricsResult = viewModel.getSyncedLyrics(queryResult.songLink ?: "")!!
+                                lyricsResult = viewModel.getSyncedLyrics(queryResult.songLink ?: "", context.getVersion())!!
                             } catch (e: Exception) {
                                 when (e) {
                                     is NullPointerException, is FileNotFoundException -> {

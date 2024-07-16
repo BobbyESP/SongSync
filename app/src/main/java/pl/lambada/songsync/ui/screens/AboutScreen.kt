@@ -33,7 +33,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -41,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +51,9 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,7 +61,10 @@ import pl.lambada.songsync.R
 import pl.lambada.songsync.data.MainViewModel
 import pl.lambada.songsync.domain.model.Release
 import pl.lambada.songsync.ui.components.AboutItem
+import pl.lambada.songsync.ui.components.SwitchItem
+import pl.lambada.songsync.util.dataStore
 import pl.lambada.songsync.util.ext.getVersion
+import pl.lambada.songsync.util.set
 
 /**
  * Composable function for AboutScreen component.
@@ -73,10 +79,7 @@ fun AboutScreen(
     val version = LocalContext.current.getVersion()
     val context = LocalContext.current
 
-    val sharedPreferences = context.getSharedPreferences(
-        "pl.lambada.songsync_preferences",
-        Context.MODE_PRIVATE
-    )
+    val dataStore = context.dataStore
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
@@ -100,7 +103,7 @@ fun AboutScreen(
                 },
                 title = {
                     Text(
-                        modifier = Modifier.padding(start = 8.dp),
+                        modifier = Modifier.padding(start = 6.dp),
                         text = stringResource(id = R.string.about)
                     )
                 },
@@ -115,23 +118,31 @@ fun AboutScreen(
             item {
                 if (isSystemInDarkTheme()) {
                     AboutItem(label = stringResource(R.string.theme)) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 22.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        val pureBlack = viewModel.pureBlack
+                        var selected by remember { mutableStateOf(pureBlack.value) }
+                        SwitchItem(
+                            label = stringResource(R.string.pure_black_theme),
+                            selected = selected
                         ) {
-                            Text(stringResource(R.string.pure_black_theme))
-                            Spacer(modifier = Modifier.weight(1f))
-                            val pureBlack = viewModel.pureBlack
-                            var selected by remember { mutableStateOf(pureBlack.value) }
-                            Switch(
-                                checked = selected,
-                                onCheckedChange = {
-                                    viewModel.pureBlack.value = it
-                                    selected = it
-                                    sharedPreferences.edit().putBoolean("pure_black", it).apply()
-                                }
-                            )
+                            viewModel.pureBlack.value = !selected
+                            selected = !selected
+                            dataStore.set(key = booleanPreferencesKey("pure_black"), value = selected)
                         }
+                    }
+                }
+            }
+
+            item {
+                AboutItem(label = stringResource(R.string.disable_marquee)) {
+                    val disableMarquee = viewModel.disableMarquee
+                    var selected by remember { mutableStateOf(disableMarquee.value) }
+                    SwitchItem(
+                        label = stringResource(R.string.disable_marquee_summary),
+                        selected = selected
+                    ) {
+                        viewModel.disableMarquee.value = !selected
+                        selected = !selected
+                        dataStore.set(key = booleanPreferencesKey("marquee_disable"), value = selected)
                     }
                 }
             }
@@ -167,7 +178,10 @@ fun AboutScreen(
                                 onClick = {
                                     sdPath = ""
                                     viewModel.sdCardPath = ""
-                                    sharedPreferences.edit().remove("sd_card_path").apply()
+                                    dataStore.set(
+                                        key = stringPreferencesKey("sd_card_path"),
+                                        value = sdPath
+                                    )
                                 }
                             ) {
                                 Text(stringResource(R.string.clear_sd_card_path))
@@ -187,9 +201,10 @@ fun AboutScreen(
                                     }
                                     sdPath = it.toString()
                                     viewModel.sdCardPath = it.toString()
-                                    sharedPreferences.edit()
-                                        .putString("sd_card_path", it.toString())
-                                        .apply()
+                                    dataStore.set(
+                                        key = stringPreferencesKey("sd_card_path"),
+                                        value = sdPath
+                                    )
                                     picker = false
                                 }
                             LaunchedEffect(Unit) {
@@ -275,7 +290,7 @@ fun AboutScreen(
 
             item {
                 AboutItem(stringResource(R.string.contributors)) {
-                    Contributor.values().forEach {
+                    Contributor.entries.forEach {
                         val additionalInfo = stringResource(id = it.contributionLevel.stringResource)
                         Column(
                             modifier = Modifier
@@ -427,8 +442,12 @@ enum class Contributor(
         github = "https://github.com/nift4", telegram = "https://t.me/nift4"
     ),
     BOBBYESP(
-        "BobbyESP", ContributionLevel.CONTRIBUTOR,
+        "BobbyESP", ContributionLevel.DEVELOPER,
         github = "https://github.com/BobbyESP"
+    ),
+    PXEEMO(
+        "Pxeemo", ContributionLevel.CONTRIBUTOR,
+        github = "https://github.com/pxeemo"
     ),
     AKANETAN(
         "AkaneTan", ContributionLevel.CONTRIBUTOR,
